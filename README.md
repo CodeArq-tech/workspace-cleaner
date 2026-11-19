@@ -35,15 +35,39 @@ git workspace-cleaner install
 
 This installs global checkout, commit and merge hooks. It refuses to replace an existing global hooks path. Git uses a single hooks directory: this global setting prevents ordinary repository-local hooks from running, while repositories with their own `core.hooksPath` bypass these hooks. Review existing hooks before installing.
 
-Alternatively, install hooks in existing repositories under a directory:
-
-```sh
-git workspace-cleaner install-path ~/Dev
-```
-
-The command recursively lists Git worktrees and asks for **one confirmation** before making changes. It installs checkout, commit and merge hooks in each repository and registers each worktree. It does not follow symbolic links or discover bare repositories. Repositories with a custom `core.hooksPath` or an existing conflicting hook are skipped instead of being overwritten; failures are reported and produce a nonzero exit status. Linked worktrees share their repository's hooks. Future repositories outside this scan still need global hooks or another scan. Installation does not schedule periodic cleanup.
+Alternatively, install hooks in existing repositories under a directory with [`install-path`](#find-and-register-worktrees-in-a-directory).
 
 ## Usage
+
+### Find and register worktrees in a directory
+
+Run `install-path` with the directory you want to search. It searches that directory and its descendants for Git worktrees, including linked worktrees:
+
+```sh
+# Search all projects under ~/Dev.
+git workspace-cleaner install-path ~/Dev
+
+# Search a specific directory; quote paths containing spaces.
+git workspace-cleaner install-path "$HOME/Dev/My Projects"
+```
+
+The path must be an existing directory. Holt lists the discovered worktrees and asks for **one confirmation for the entire list**:
+
+```text
+Found 2 Git worktree(s):
+  /Users/example/Dev/project-a
+  /Users/example/Dev/project-b
+Install hooks and register these worktrees? [y/N]
+```
+
+Enter `y` or `yes` to proceed. Press Enter or enter any other response to cancel without installing hooks or registering the worktrees. When confirmed, Holt processes each worktree, installs checkout, commit and merge hooks when needed, and saves each successful registration. If Holt's global hooks are already configured and complete, it uses those hooks instead. Verify the result with:
+
+```sh
+git workspace-cleaner list
+git workspace-cleaner list --path ~/Dev
+```
+
+The search does not follow symbolic links or discover bare repositories. Worktrees without a valid `HEAD`, with conflicting hooks, or with another `core.hooksPath` are skipped rather than overwritten. Skips are reported and cause a nonzero exit status; other successful registrations remain saved. Linked worktrees share their repository's hooks. Scanning does not schedule cleanup, and future repositories outside the scan need global hooks or another scan.
 
 ### Register and inspect worktrees
 
