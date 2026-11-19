@@ -8,7 +8,7 @@ Holt helps developers and AI agents manage Git worktrees that may have been left
 
 The default inactivity period is **14 days**. You can change it globally or for specific directories, disable automation for selected paths, or enable it only for an allowlist. The main worktree of a repository is never removed.
 
-Holt is a Git subcommand written in Rust. Its command remains `git workspace-cleaner`; it observes some Git activity through hooks and uses an external scheduler for periodic checks. Discovery and inactivity detection are best effort; see [Safety and limitations](#safety-and-limitations) before enabling automatic cleanup.
+Holt is a Git subcommand written in Rust. Run it with `git holt`; it observes some Git activity through hooks and uses an external scheduler for periodic checks. Discovery and inactivity detection are best effort; see [Safety and limitations](#safety-and-limitations) before enabling automatic cleanup.
 
 ## Installation
 
@@ -16,7 +16,7 @@ Holt is a Git subcommand written in Rust. Its command remains `git workspace-cle
 
 - Git and a Rust toolchain with Cargo.
 - A configured Git author name and email, and permission to push to the repository's remote.
-- The Cargo binary directory (normally `~/.cargo/bin`) on your `PATH` so Git can find `git-workspace-cleaner`.
+- The Cargo binary directory (normally `~/.cargo/bin`) on your `PATH` so Git can find `git-holt`.
 
 ### Install from source
 
@@ -24,13 +24,15 @@ Holt is a Git subcommand written in Rust. Its command remains `git workspace-cle
 git clone https://github.com/CodeArq-tech/workspace-cleaner.git
 cd workspace-cleaner
 cargo install --locked --path .
-git workspace-cleaner --help
+git holt -h
 ```
+
+If upgrading from `git workspace-cleaner`, the configuration and registry remain at their existing paths. Existing hooks and scheduled jobs may still refer to the old executable: keep it available until you update those references. Run `git holt install` to refresh Holt's global hooks if you use them, review repository-specific hooks, and update any existing cron or Task Scheduler command to the new `git-holt` executable. Setup does not replace an existing Holt schedule.
 
 ### Initial setup
 
 ```sh
-git workspace-cleaner setup
+git holt setup
 ```
 
 Setup creates `~/.workspace-cleaner.yaml` with the default 14-day retention period if it does not already exist. It then asks whether to schedule daily cleanup at 03:00 and whether to search a directory for Git worktrees. If you choose a search, enter the path; Holt lists the worktrees and asks for a single confirmation before installing hooks and registering them. Existing configuration is never overwritten.
@@ -42,7 +44,7 @@ The scheduled command performs cleanup without another prompt, respecting config
 To enable automatic registration and activity updates through Git hooks, run:
 
 ```sh
-git workspace-cleaner install
+git holt install
 ```
 
 This installs global checkout, commit and merge hooks. It refuses to replace an existing global hooks path. Git uses a single hooks directory: this global setting prevents ordinary repository-local hooks from running, while repositories with their own `core.hooksPath` bypass these hooks. Review existing hooks before installing.
@@ -57,10 +59,10 @@ Run `install-path` with the directory you want to search. It searches that direc
 
 ```sh
 # Search all projects under ~/Dev.
-git workspace-cleaner install-path ~/Dev
+git holt install-path ~/Dev
 
 # Search a specific directory; quote paths containing spaces.
-git workspace-cleaner install-path "$HOME/Dev/My Projects"
+git holt install-path "$HOME/Dev/My Projects"
 ```
 
 The path must be an existing directory. Holt lists the discovered worktrees and asks for **one confirmation for the entire list**:
@@ -75,8 +77,8 @@ Install hooks and register these worktrees? [y/N]
 Enter `y` or `yes` to proceed. Press Enter or enter any other response to cancel without installing hooks or registering the worktrees. When confirmed, Holt processes each worktree, installs checkout, commit and merge hooks when needed, and saves each successful registration. If Holt's global hooks are already configured and complete, it uses those hooks instead. Verify the result with:
 
 ```sh
-git workspace-cleaner list
-git workspace-cleaner list --path ~/Dev
+git holt list
+git holt list --path ~/Dev
 ```
 
 The search does not follow symbolic links or discover bare repositories. Worktrees without a valid `HEAD`, with conflicting hooks, or with another `core.hooksPath` are skipped rather than overwritten. Skips are reported and cause a nonzero exit status; other successful registrations remain saved. Linked worktrees share their repository's hooks. Scanning does not schedule cleanup, and future repositories outside the scan need global hooks or another scan.
@@ -87,40 +89,40 @@ Hooks register worktrees they observe, but discovery is best effort: Git has no 
 
 ```sh
 # Register the current worktree, or pass its path.
-git workspace-cleaner register
-git workspace-cleaner register /path/to/worktree
+git holt register
+git holt register /path/to/worktree
 
 # List all registered worktrees or filter by project directory.
-git workspace-cleaner list
-git workspace-cleaner list --path ~/Dev/MyProject
+git holt list
+git holt list --path ~/Dev/MyProject
 ```
 
 ### Preview and clean stale worktrees
 
 ```sh
 # Preview eligible worktrees without pushing or removing them.
-git workspace-cleaner run
+git holt run
 
 # Back up and remove eligible worktrees now.
-git workspace-cleaner clean
+git holt clean
 
 # Limit the immediate cleanup to a project or directory.
-git workspace-cleaner clean --path ~/Dev/MyProject
+git holt clean --path ~/Dev/MyProject
 ```
 
-`clean` performs a scan immediately; it still honors retention periods, disabled paths, and all safety checks. It does not force cleanup of recently active worktrees. The path filter matches worktrees under that directory and worktrees belonging to a repository under it. `git workspace-cleaner run --apply` remains an equivalent unfiltered command.
+`clean` performs a scan immediately; it still honors retention periods, disabled paths, and all safety checks. It does not force cleanup of recently active worktrees. The path filter matches worktrees under that directory and worktrees belonging to a repository under it. `git holt run --apply` remains an equivalent unfiltered command.
 
 Eligible linked worktrees are pushed and removed without another prompt. Each backup is pushed to a new branch; the original branch and index are not changed. Worktrees that fail the safety checks are skipped.
 
 ### Schedule periodic checks
 
-Holt does not run a daemon: Git hooks record activity but do not perform periodic cleanup. Use `git workspace-cleaner setup` to opt into daily scheduling, or configure an external scheduler yourself. For example, add this to your user crontab (`crontab -e`), replacing both absolute paths and ensuring Git and remote credentials work in the scheduler environment:
+Holt does not run a daemon: Git hooks record activity but do not perform periodic cleanup. Use `git holt setup` to opt into daily scheduling, or configure an external scheduler yourself. For example, add this to your user crontab (`crontab -e`), replacing both absolute paths and ensuring Git and remote credentials work in the scheduler environment:
 
 ```cron
-0 3 * * * /absolute/path/to/git-workspace-cleaner clean >> /absolute/path/to/workspace-cleaner.log 2>&1
+0 3 * * * /absolute/path/to/git-holt clean >> /absolute/path/to/workspace-cleaner.log 2>&1
 ```
 
-This requests a scan each day at 03:00 in the scheduler's local time. Cron does not normally make up a run missed while the computer is asleep or off. Check the log for results and errors; run `git workspace-cleaner clean` manually whenever needed.
+This requests a scan each day at 03:00 in the scheduler's local time. Cron does not normally make up a run missed while the computer is asleep or off. Check the log for results and errors; run `git holt clean` manually whenever needed.
 
 ## Configuration
 
@@ -156,9 +158,9 @@ paths:
 Backups are pushed to a new branch named `clean-workspaces-backup-<branch>-<workspace>-<UTC-date>-<suffix>`. List them and use the displayed backup ID to restore one:
 
 ```sh
-git workspace-cleaner backups
-git workspace-cleaner backups --path ~/Dev/MyProject
-git workspace-cleaner restore BACKUP_ID /path/to/new-worktree
+git holt backups
+git holt backups --path ~/Dev/MyProject
+git holt restore BACKUP_ID /path/to/new-worktree
 cd /path/to/new-worktree
 git switch -c my-restored-work
 ```

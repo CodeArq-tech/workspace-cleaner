@@ -23,7 +23,7 @@ fn git(args: &[&str], dir: &Path, home: &Path) -> String {
     cmd("git", args, dir, home)
 }
 fn cli(args: &[&str], dir: &Path, home: &Path) -> String {
-    cmd(env!("CARGO_BIN_EXE_git-workspace-cleaner"), args, dir, home)
+    cmd(env!("CARGO_BIN_EXE_git-holt"), args, dir, home)
 }
 #[test]
 fn backup_and_restore_preserve_changes() {
@@ -122,7 +122,7 @@ fn install_path_asks_once_and_preserves_existing_hooks() {
     let existing = second.join(".git/hooks/post-commit");
     fs::write(&existing, "existing hook\n").unwrap();
     let invoke = |answer: &str| {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_git-workspace-cleaner"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_git-holt"))
             .args(["install-path", projects.to_str().unwrap()])
             .current_dir(&base)
             .env("HOME", &home)
@@ -149,7 +149,7 @@ fn install_path_asks_once_and_preserves_existing_hooks() {
     assert!(!home
         .join(".local/share/workspace-cleaner/state.json")
         .exists());
-    let mut setup = Command::new(env!("CARGO_BIN_EXE_git-workspace-cleaner"))
+    let mut setup = Command::new(env!("CARGO_BIN_EXE_git-holt"))
         .arg("setup")
         .current_dir(&base)
         .env("HOME", &home)
@@ -198,7 +198,7 @@ fn setup_preserves_config_and_installs_only_one_cron_entry() {
     fs::write(&mock, "#!/bin/sh\nif [ \"$1\" = -l ]; then cat \"$TEST_CRON_CAPTURE\"; else cat > \"$TEST_CRON_CAPTURE\"; fi\n").unwrap();
     fs::set_permissions(&mock, fs::Permissions::from_mode(0o755)).unwrap();
     let invoke = |answers: &str| {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_git-workspace-cleaner"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_git-holt"))
             .arg("setup")
             .current_dir(&base)
             .env("HOME", &home)
@@ -241,4 +241,23 @@ fn setup_preserves_config_and_installs_only_one_cron_entry() {
     assert_eq!(fs::read_to_string(&capture).unwrap(), scheduled);
     assert_eq!(fs::read_to_string(&config).unwrap(), "retention_days: 30\n");
     let _ = fs::remove_dir_all(base);
+}
+
+#[test]
+fn git_discovers_holt_subcommand() {
+    let executable = Path::new(env!("CARGO_BIN_EXE_git-holt"));
+    let mut paths = vec![executable.parent().unwrap().to_path_buf()];
+    paths.extend(std::env::split_paths(&std::env::var_os("PATH").unwrap()));
+    let path = std::env::join_paths(paths).unwrap();
+    let output = Command::new("git")
+        .args(["holt", "-h"])
+        .env("PATH", path)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("git-holt"));
 }

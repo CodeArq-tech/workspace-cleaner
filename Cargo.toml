@@ -6,7 +6,7 @@ description = "Back up and clean stale Git worktrees"
 license = "MIT"
 
 [[bin]]
-name = "git-workspace-cleaner"
+name = "git-holt"
 path = "src/main.rs"
 
 [dependencies]

@@ -12,7 +12,7 @@ use walkdir::WalkDir;
 
 #[derive(Parser)]
 #[command(
-    name = "git-workspace-cleaner",
+    name = "git-holt",
     version,
     about = "Back up and clean stale Git worktrees"
 )]
@@ -278,7 +278,9 @@ fn setup() -> Result<()> {
     if scheduling_failed {
         bail!("Setup completed without scheduling; see the error above");
     }
-    println!("Setup complete. Review your configuration and run 'git workspace-cleaner run' to preview cleanup.");
+    println!(
+        "Setup complete. Review your configuration and run 'git holt run' to preview cleanup."
+    );
     Ok(())
 }
 
