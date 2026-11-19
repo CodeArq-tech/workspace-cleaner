@@ -27,6 +27,18 @@ cargo install --locked --path .
 git workspace-cleaner --help
 ```
 
+### Initial setup
+
+```sh
+git workspace-cleaner setup
+```
+
+Setup creates `~/.workspace-cleaner.yaml` with the default 14-day retention period if it does not already exist. It then asks whether to schedule daily cleanup at 03:00 and whether to search a directory for Git worktrees. If you choose a search, enter the path; Holt lists the worktrees and asks for a single confirmation before installing hooks and registering them. Existing configuration is never overwritten.
+
+On macOS and Linux, the scheduler option adds an entry to the current user's crontab, preserving other entries and saving output to `~/.local/share/workspace-cleaner/cleanup.log`. On Windows, it creates a daily task named `Holt Workspace Cleaner` in Task Scheduler. Setup does not replace an existing Holt schedule. A scheduling error is reported; setup still offers repository discovery and returns a failure status afterward. The executable must remain at the installed path, and unattended Git authentication must be configured for backups to succeed.
+
+The scheduled command performs cleanup without another prompt, respecting configured retention, disabled paths and safety checks. Choose `N` if you want to set up scheduling separately. Setup does not install global Git hooks; it installs repository hooks only when a search is confirmed.
+
 To enable automatic registration and activity updates through Git hooks, run:
 
 ```sh
@@ -102,7 +114,7 @@ Eligible linked worktrees are pushed and removed without another prompt. Each ba
 
 ### Schedule periodic checks
 
-Holt does not run a daemon or install a scheduler automatically: Git hooks record activity but do not perform periodic cleanup. To run it periodically, configure an external scheduler. For example, add this to your user crontab (`crontab -e`), replacing both absolute paths and ensuring Git and remote credentials work in the scheduler environment:
+Holt does not run a daemon: Git hooks record activity but do not perform periodic cleanup. Use `git workspace-cleaner setup` to opt into daily scheduling, or configure an external scheduler yourself. For example, add this to your user crontab (`crontab -e`), replacing both absolute paths and ensuring Git and remote credentials work in the scheduler environment:
 
 ```cron
 0 3 * * * /absolute/path/to/git-workspace-cleaner clean >> /absolute/path/to/workspace-cleaner.log 2>&1

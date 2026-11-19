@@ -8,7 +8,7 @@ Global checkout, commit, and merge hooks register activity. Manual registration 
 
 `install-path` scans a directory for worktrees and asks for one confirmation before installing repository hooks and registering them. It does not follow symbolic links. The hooks live in the common Git directory and are shared by linked worktrees. Conflicting hooks or custom hooks paths are left untouched and reported; successfully processed worktrees are saved independently.
 
-An external scheduler runs `run --apply`; plain `run` previews. Inactivity combines hook time, HEAD changes and filesystem modification times. Git has no universal post-worktree-create hook; hooks may be bypassed or overridden. A live agent without file changes cannot be detected.
+The interactive `setup` creates a default configuration without overwriting one and optionally schedules daily `clean` runs using the user's crontab on macOS and Linux or Task Scheduler on Windows. It can invoke the existing confirmed worktree discovery flow. Other crontab entries and pre-existing Holt schedules are preserved. Scheduling is opt-in; plain `run` previews. Inactivity combines hook time, HEAD changes and filesystem modification times. Git has no universal post-worktree-create hook; hooks may be bypassed or overridden. A live agent without file changes cannot be detected.
 
 ## Backup transaction
 

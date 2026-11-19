@@ -149,8 +149,25 @@ fn install_path_asks_once_and_preserves_existing_hooks() {
     assert!(!home
         .join(".local/share/workspace-cleaner/state.json")
         .exists());
-    let yes = invoke("yes\n");
+    let mut setup = Command::new(env!("CARGO_BIN_EXE_git-workspace-cleaner"))
+        .arg("setup")
+        .current_dir(&base)
+        .env("HOME", &home)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    write!(
+        setup.stdin.take().unwrap(),
+        "no\nyes\n{}\nyes\n",
+        projects.display()
+    )
+    .unwrap();
+    let yes = setup.wait_with_output().unwrap();
     assert!(!yes.status.success());
+    assert!(String::from_utf8_lossy(&yes.stdout).contains("Found 2 Git worktree(s)"));
     assert!(repo.join(".git/hooks/post-commit").exists());
     assert_eq!(fs::read_to_string(existing).unwrap(), "existing hook\n");
     let state: serde_json::Value = serde_json::from_slice(
@@ -158,5 +175,70 @@ fn install_path_asks_once_and_preserves_existing_hooks() {
     )
     .unwrap();
     assert_eq!(state["workspaces"].as_array().unwrap().len(), 1);
+    let _ = fs::remove_dir_all(base);
+}
+
+#[cfg(unix)]
+#[test]
+fn setup_preserves_config_and_installs_only_one_cron_entry() {
+    use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
+    use std::process::Stdio;
+    let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("target")
+        .join(format!("setup-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&base);
+    let home = base.join("home");
+    let bin = base.join("bin");
+    let capture = base.join("crontab");
+    fs::create_dir_all(&home).unwrap();
+    fs::create_dir_all(&bin).unwrap();
+    fs::write(&capture, "15 8 * * * existing-job\n").unwrap();
+    let mock = bin.join("crontab");
+    fs::write(&mock, "#!/bin/sh\nif [ \"$1\" = -l ]; then cat \"$TEST_CRON_CAPTURE\"; else cat > \"$TEST_CRON_CAPTURE\"; fi\n").unwrap();
+    fs::set_permissions(&mock, fs::Permissions::from_mode(0o755)).unwrap();
+    let invoke = |answers: &str| {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_git-workspace-cleaner"))
+            .arg("setup")
+            .current_dir(&base)
+            .env("HOME", &home)
+            .env("TEST_CRON_CAPTURE", &capture)
+            .env(
+                "PATH",
+                format!("{}:{}", bin.display(), std::env::var("PATH").unwrap()),
+            )
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(answers.as_bytes())
+            .unwrap();
+        child.wait_with_output().unwrap()
+    };
+    let first = invoke("yes\nno\n");
+    assert!(
+        first.status.success(),
+        "{}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    let config = home.join(".workspace-cleaner.yaml");
+    assert!(fs::read_to_string(&config)
+        .unwrap()
+        .contains("retention_days: 14"));
+    let scheduled = fs::read_to_string(&capture).unwrap();
+    assert!(scheduled.contains("15 8 * * * existing-job"));
+    assert!(scheduled.contains("0 3 * * * PATH="));
+    assert!(scheduled.contains(" clean >> "));
+    fs::write(&config, "retention_days: 30\n").unwrap();
+    let second = invoke("yes\nno\n");
+    assert!(!second.status.success());
+    assert!(String::from_utf8_lossy(&second.stderr).contains("already exists"));
+    assert_eq!(fs::read_to_string(&capture).unwrap(), scheduled);
+    assert_eq!(fs::read_to_string(&config).unwrap(), "retention_days: 30\n");
     let _ = fs::remove_dir_all(base);
 }

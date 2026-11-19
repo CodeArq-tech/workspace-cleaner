@@ -6,7 +6,7 @@ use std::{
     fs,
     io::{self, Write},
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
 };
 use walkdir::WalkDir;
 
@@ -22,6 +22,8 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Action {
+    /// Set up configuration, optional scheduling, and repository discovery.
+    Setup,
     /// Install global hooks. Configure a scheduler separately.
     Install,
     /// Find repositories under PATH and install hooks after one confirmation.
@@ -219,6 +221,167 @@ fn register(s: &mut State, p: &Path) -> Result<()> {
             head,
         });
     }
+    Ok(())
+}
+
+const DEFAULT_CONFIG: &str =
+    "# Holt configuration\nenabled: true\nretention_days: 14\nremote: origin\npaths: []\n";
+const CRON_MARKER: &str = "# Holt workspace-cleaner daily cleanup";
+
+fn ask(prompt: &str) -> Result<String> {
+    print!("{prompt}");
+    io::stdout().flush()?;
+    let mut response = String::new();
+    if io::stdin().read_line(&mut response)? == 0 {
+        bail!("Input ended before setup was complete");
+    }
+    Ok(response.trim().to_owned())
+}
+
+fn confirm(prompt: &str) -> Result<bool> {
+    Ok(matches!(
+        ask(prompt)?.to_ascii_lowercase().as_str(),
+        "y" | "yes"
+    ))
+}
+
+fn setup() -> Result<()> {
+    let path = home()?.join(".workspace-cleaner.yaml");
+    match fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+    {
+        Ok(mut file) => {
+            file.write_all(DEFAULT_CONFIG.as_bytes())?;
+            println!("Created configuration: {}", path.display());
+        }
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+            println!("Keeping existing configuration: {}", path.display())
+        }
+        Err(e) => return Err(e).context("Could not create configuration"),
+    }
+    let mut scheduling_failed = false;
+    if confirm("Schedule daily cleanup at 03:00 using the system scheduler? [y/N] ")? {
+        if let Err(e) = install_schedule() {
+            eprintln!("Could not configure scheduling: {e:#}");
+            scheduling_failed = true;
+        }
+    }
+    if confirm("Search a directory for Git worktrees? [y/N] ")? {
+        let input = ask("Directory to search: ")?;
+        if input.is_empty() {
+            bail!("Directory cannot be empty");
+        }
+        install_path(&expand(&input)?)?;
+    }
+    if scheduling_failed {
+        bail!("Setup completed without scheduling; see the error above");
+    }
+    println!("Setup complete. Review your configuration and run 'git workspace-cleaner run' to preview cleanup.");
+    Ok(())
+}
+
+fn install_schedule() -> Result<()> {
+    let exe = std::env::current_exe()?;
+    if cfg!(windows) {
+        let executable = exe.to_str().context("Executable path is not UTF-8")?;
+        if executable.contains('"') {
+            bail!("Executable path cannot contain a quote");
+        }
+        let action = format!("\"{executable}\" clean");
+        let out = Command::new("schtasks")
+            .args([
+                "/Create",
+                "/TN",
+                "Holt Workspace Cleaner",
+                "/SC",
+                "DAILY",
+                "/ST",
+                "03:00",
+                "/TR",
+                &action,
+            ])
+            .output()
+            .context("Could not run Windows Task Scheduler")?;
+        if !out.status.success() {
+            bail!(
+                "Task Scheduler: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            );
+        }
+        println!("Created Windows Task Scheduler task Holt Workspace Cleaner (daily at 03:00).");
+        return Ok(());
+    }
+    if !cfg!(any(target_os = "macos", target_os = "linux")) {
+        bail!("Automatic scheduling is supported on macOS, Linux, and Windows only");
+    }
+    let output = Command::new("crontab")
+        .arg("-l")
+        .output()
+        .context("Could not run crontab")?;
+    let existing = if output.status.success() {
+        String::from_utf8(output.stdout).context("Crontab is not UTF-8")?
+    } else if output.status.code() == Some(1)
+        && String::from_utf8_lossy(&output.stderr)
+            .to_ascii_lowercase()
+            .contains("no crontab for")
+    {
+        String::new()
+    } else {
+        bail!(
+            "Could not read crontab: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    };
+    if existing.lines().any(|line| line.trim() == CRON_MARKER) {
+        bail!("A Holt cron entry already exists; edit it with crontab -e");
+    }
+    let log = state_dir()?.join("cleanup.log");
+    let cron_quote = |p: &Path| -> Result<String> {
+        let value = p.to_str().context("Scheduler path is not UTF-8")?;
+        if value.contains(['\n', '\r']) {
+            bail!("Scheduler path contains a newline");
+        }
+        Ok(format!(
+            "'{}'",
+            value.replace('\'', "'\\''").replace('%', "\\%")
+        ))
+    };
+    let search_path = std::env::var("PATH").context("PATH is not set or is not UTF-8")?;
+    let cron = format!(
+        "{}{}{}\n0 3 * * * PATH={} {} clean >> {} 2>&1\n",
+        existing,
+        if existing.is_empty() || existing.ends_with('\n') {
+            ""
+        } else {
+            "\n"
+        },
+        CRON_MARKER,
+        cron_quote(Path::new(&search_path))?,
+        cron_quote(&exe)?,
+        cron_quote(&log)?
+    );
+    let mut child = Command::new("crontab")
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("Could not install crontab")?;
+    child
+        .stdin
+        .take()
+        .context("Could not open crontab input")?
+        .write_all(cron.as_bytes())?;
+    let result = child.wait_with_output()?;
+    if !result.status.success() {
+        bail!(
+            "Could not install crontab: {}",
+            String::from_utf8_lossy(&result.stderr).trim()
+        );
+    }
+    println!("Scheduled daily cleanup at 03:00. Log: {}", log.display());
     Ok(())
 }
 
@@ -596,6 +759,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     let _lock = lock()?;
     match cli.command {
+        Action::Setup => setup(),
         Action::Install => install(),
         Action::InstallPath { path } => install_path(&path),
         Action::Hook => {
