@@ -43,6 +43,12 @@ enum Action {
         #[arg(long)]
         apply: bool,
     },
+    /// Back up and remove eligible stale worktrees immediately.
+    Clean {
+        /// Only consider worktrees under this path or belonging to a project under it.
+        #[arg(long)]
+        path: Option<PathBuf>,
+    },
     /// Restore a recorded backup into a new worktree.
     Restore { id: String, path: PathBuf },
     /// Internal hook entry point.
@@ -632,52 +638,8 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
-        Action::Run { apply } => {
-            let cfg = config()?;
-            let mut s = load()?;
-            let mut failures = 0;
-            for w in s.workspaces.clone() {
-                if !w.path.exists() {
-                    eprintln!("Missing: {}", w.path.display());
-                    continue;
-                }
-                let (enabled, days) = policy(&cfg, &w.path)?;
-                if !enabled {
-                    continue;
-                }
-                let head = match git(&w.path, &["rev-parse", "HEAD"]) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        eprintln!("{}: {e:#}", w.path.display());
-                        failures += 1;
-                        continue;
-                    }
-                };
-                if head != w.head {
-                    if let Some(x) = s.workspaces.iter_mut().find(|x| x.path == w.path) {
-                        x.head = head;
-                        x.last_activity = Utc::now();
-                    }
-                    continue;
-                }
-                let activity = w.last_activity.max(latest_file_time(&w.path));
-                if Utc::now().signed_duration_since(activity) < Duration::days(days) {
-                    continue;
-                }
-                println!("Stale: {} (last activity {})", w.path.display(), activity);
-                if apply {
-                    if let Err(e) = backup(&mut s, &w, &cfg) {
-                        eprintln!("{}: {e:#}", w.path.display());
-                        failures += 1;
-                    }
-                }
-            }
-            save(&s)?;
-            if failures > 0 {
-                bail!("{failures} workspace(s) failed")
-            }
-            Ok(())
-        }
+        Action::Run { apply } => run_cleanup(apply, None),
+        Action::Clean { path } => run_cleanup(true, path),
         Action::Restore { id, path } => {
             let mut s = load()?;
             let b = s
@@ -718,4 +680,58 @@ fn main() -> Result<()> {
             Ok(())
         }
     }
+}
+
+fn run_cleanup(apply: bool, path: Option<PathBuf>) -> Result<()> {
+    let cfg = config()?;
+    let mut s = load()?;
+    let mut failures = 0;
+    let filter = path.map(|p| normalize(&p)).transpose()?;
+    for w in s.workspaces.clone() {
+        if filter
+            .as_ref()
+            .is_some_and(|p| !w.path.starts_with(p) && !w.common_dir.starts_with(p))
+        {
+            continue;
+        }
+        if !w.path.exists() {
+            eprintln!("Missing: {}", w.path.display());
+            continue;
+        }
+        let (enabled, days) = policy(&cfg, &w.path)?;
+        if !enabled {
+            continue;
+        }
+        let head = match git(&w.path, &["rev-parse", "HEAD"]) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("{}: {e:#}", w.path.display());
+                failures += 1;
+                continue;
+            }
+        };
+        if head != w.head {
+            if let Some(x) = s.workspaces.iter_mut().find(|x| x.path == w.path) {
+                x.head = head;
+                x.last_activity = Utc::now();
+            }
+            continue;
+        }
+        let activity = w.last_activity.max(latest_file_time(&w.path));
+        if Utc::now().signed_duration_since(activity) < Duration::days(days) {
+            continue;
+        }
+        println!("Stale: {} (last activity {})", w.path.display(), activity);
+        if apply {
+            if let Err(e) = backup(&mut s, &w, &cfg) {
+                eprintln!("{}: {e:#}", w.path.display());
+                failures += 1;
+            }
+        }
+    }
+    save(&s)?;
+    if failures > 0 {
+        bail!("{failures} workspace(s) failed")
+    }
+    Ok(())
 }

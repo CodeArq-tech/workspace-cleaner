@@ -59,6 +59,8 @@ fn backup_and_restore_preserve_changes() {
     fs::write(work.join("file"), "changed\n").unwrap();
     fs::write(work.join("new"), "untracked\n").unwrap();
     cli(&["register", work.to_str().unwrap()], &repo, &home);
+    cli(&["clean"], &repo, &home);
+    assert!(work.exists(), "recent worktrees must not be cleaned");
     let state_path = home.join(".local/share/workspace-cleaner/state.json");
     let mut state: serde_json::Value =
         serde_json::from_slice(&fs::read(&state_path).unwrap()).unwrap();
@@ -74,7 +76,9 @@ fn backup_and_restore_preserve_changes() {
     }
     assert!(cli(&["run"], &repo, &home).contains("Stale:"));
     assert!(work.exists());
-    cli(&["run", "--apply"], &repo, &home);
+    cli(&["clean", "--path", home.to_str().unwrap()], &repo, &home);
+    assert!(work.exists(), "worktrees outside the filter must be kept");
+    cli(&["clean", "--path", repo.to_str().unwrap()], &repo, &home);
     assert!(!work.exists());
     let state: serde_json::Value = serde_json::from_slice(&fs::read(&state_path).unwrap()).unwrap();
     let id = state["backups"][0]["id"].as_str().unwrap();

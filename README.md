@@ -89,19 +89,26 @@ git workspace-cleaner list --path ~/Dev/MyProject
 # Preview eligible worktrees without pushing or removing them.
 git workspace-cleaner run
 
-# Back up and remove eligible worktrees.
-git workspace-cleaner run --apply
+# Back up and remove eligible worktrees now.
+git workspace-cleaner clean
+
+# Limit the immediate cleanup to a project or directory.
+git workspace-cleaner clean --path ~/Dev/MyProject
 ```
 
-With `--apply`, eligible linked worktrees are pushed and removed without another prompt. Each backup is pushed to a new branch; the original branch and index are not changed. Worktrees that fail the safety checks are skipped.
+`clean` performs a scan immediately; it still honors retention periods, disabled paths, and all safety checks. It does not force cleanup of recently active worktrees. The path filter matches worktrees under that directory and worktrees belonging to a repository under it. `git workspace-cleaner run --apply` remains an equivalent unfiltered command.
+
+Eligible linked worktrees are pushed and removed without another prompt. Each backup is pushed to a new branch; the original branch and index are not changed. Worktrees that fail the safety checks are skipped.
 
 ### Schedule periodic checks
 
-Schedule the absolute executable path with your preferred scheduler. For example, add this to your user crontab, replacing both absolute paths and ensuring Git and remote credentials work in the scheduler environment:
+Holt does not run a daemon or install a scheduler automatically: Git hooks record activity but do not perform periodic cleanup. To run it periodically, configure an external scheduler. For example, add this to your user crontab (`crontab -e`), replacing both absolute paths and ensuring Git and remote credentials work in the scheduler environment:
 
 ```cron
-0 3 * * * /absolute/path/to/git-workspace-cleaner run --apply >> /absolute/path/to/workspace-cleaner.log 2>&1
+0 3 * * * /absolute/path/to/git-workspace-cleaner clean >> /absolute/path/to/workspace-cleaner.log 2>&1
 ```
+
+This requests a scan each day at 03:00 in the scheduler's local time. Cron does not normally make up a run missed while the computer is asleep or off. Check the log for results and errors; run `git workspace-cleaner clean` manually whenever needed.
 
 ## Configuration
 
