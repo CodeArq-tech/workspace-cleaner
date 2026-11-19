@@ -4,6 +4,7 @@ use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
+    io::{self, Write},
     path::{Path, PathBuf},
     process::Command,
 };
@@ -23,6 +24,8 @@ struct Cli {
 enum Action {
     /// Install global hooks. Configure a scheduler separately.
     Install,
+    /// Find repositories under PATH and install hooks after one confirmation.
+    InstallPath { path: PathBuf },
     /// Register the current worktree, or the worktree at PATH.
     Register { path: Option<PathBuf> },
     /// Show registered worktrees. Filter by a project or directory path.
@@ -211,6 +214,140 @@ fn register(s: &mut State, p: &Path) -> Result<()> {
         });
     }
     Ok(())
+}
+
+fn install_path(path: &Path) -> Result<()> {
+    let start = normalize(path)?;
+    if !start.is_dir() {
+        bail!("Search path must be a directory");
+    }
+    let mut repos = Vec::new();
+    for entry in WalkDir::new(&start)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(|e| e.file_name() != ".git")
+    {
+        let entry = entry.context("Could not complete repository search")?;
+        if !entry.file_type().is_dir() || !entry.path().join(".git").exists() {
+            continue;
+        }
+        match root(entry.path()) {
+            Ok(repo) if repo == normalize(entry.path())? => repos.push(repo),
+            Ok(_) => {}
+            Err(e) => eprintln!("Skipping {}: {e:#}", entry.path().display()),
+        }
+    }
+    repos.sort();
+    repos.dedup();
+    if repos.is_empty() {
+        println!("No Git worktrees found under {}.", start.display());
+        return Ok(());
+    }
+    println!("Found {} Git worktree(s):", repos.len());
+    for repo in &repos {
+        println!("  {}", repo.display());
+    }
+    print!("Install hooks and register these worktrees? [y/N] ");
+    io::stdout().flush()?;
+    let mut answer = String::new();
+    io::stdin().read_line(&mut answer)?;
+    if !matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
+        println!("Cancelled; no repositories changed.");
+        return Ok(());
+    }
+    let mut state = load()?;
+    let mut failed = 0;
+    for repo in repos {
+        match install_repository(&repo).and_then(|()| register(&mut state, &repo)) {
+            Ok(()) => {
+                save(&state)?;
+                println!("Installed and registered: {}", repo.display());
+            }
+            Err(e) => {
+                failed += 1;
+                eprintln!("Skipped {}: {e:#}", repo.display());
+            }
+        }
+    }
+    if failed > 0 {
+        bail!("{failed} worktree(s) could not be installed");
+    }
+    Ok(())
+}
+
+fn install_repository(repo: &Path) -> Result<()> {
+    git(repo, &["rev-parse", "--verify", "HEAD"]).context("Repository has no valid HEAD")?;
+    let common = git(
+        repo,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    )?;
+    let hooks = Path::new(&common).join("hooks");
+    let configured = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["config", "--get", "core.hooksPath"])
+        .output()?;
+    if configured.status.success() {
+        let value = String::from_utf8_lossy(&configured.stdout)
+            .trim()
+            .to_owned();
+        if Path::new(&value) == state_dir()?.join("hooks") {
+            if ["post-checkout", "post-commit", "post-merge"]
+                .iter()
+                .all(|name| Path::new(&value).join(name).is_file())
+            {
+                return Ok(());
+            }
+            bail!("Workspace Cleaner global hooks are incomplete; run install first");
+        }
+        bail!("core.hooksPath is configured as {value}; refusing to override it");
+    }
+    if configured.status.code() != Some(1) {
+        bail!("Could not inspect core.hooksPath");
+    }
+    fs::create_dir_all(&hooks)?;
+    let names = ["post-checkout", "post-commit", "post-merge"];
+    let exe = std::env::current_exe()?;
+    let exe = exe
+        .to_str()
+        .context("Executable path is not UTF-8")?
+        .replace('\'', "'\\''");
+    let script = format!("#!/bin/sh\n'{exe}' hook >/dev/null 2>&1 || true\n");
+    if names
+        .iter()
+        .all(|name| fs::read_to_string(hooks.join(name)).is_ok_and(|content| content == script))
+    {
+        return Ok(());
+    }
+    for name in names {
+        if hooks.join(name).exists() {
+            bail!("Hook {name} already exists; refusing to overwrite it");
+        }
+    }
+    let mut created = Vec::new();
+    let result = (|| -> Result<()> {
+        for name in names {
+            let file = hooks.join(name);
+            let mut f = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&file)?;
+            created.push(file.clone());
+            f.write_all(script.as_bytes())?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(file, fs::Permissions::from_mode(0o755))?;
+            }
+        }
+        Ok(())
+    })();
+    if result.is_err() {
+        for file in created {
+            let _ = fs::remove_file(file);
+        }
+    }
+    result
 }
 fn latest_file_time(path: &Path) -> DateTime<Utc> {
     let mut latest = DateTime::<Utc>::MIN_UTC;
@@ -454,6 +591,7 @@ fn main() -> Result<()> {
     let _lock = lock()?;
     match cli.command {
         Action::Install => install(),
+        Action::InstallPath { path } => install_path(&path),
         Action::Hook => {
             let mut s = load()?;
             register(&mut s, &std::env::current_dir()?)?;

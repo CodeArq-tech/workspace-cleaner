@@ -6,6 +6,8 @@ Git discovers `git-workspace-cleaner` as a subcommand. The Rust executable imple
 
 Global checkout, commit, and merge hooks register activity. Manual registration covers missed and existing worktrees. Records store canonical worktree and common Git paths, observed HEAD and activity time. State is atomically replaced in `~/.local/share/workspace-cleaner`; a lock serializes operations. Rules inherit from broader to narrower paths, with a 14-day default.
 
+`install-path` scans a directory for worktrees and asks for one confirmation before installing repository hooks and registering them. It does not follow symbolic links. The hooks live in the common Git directory and are shared by linked worktrees. Conflicting hooks or custom hooks paths are left untouched and reported; successfully processed worktrees are saved independently.
+
 An external scheduler runs `run --apply`; plain `run` previews. Inactivity combines hook time, HEAD changes and filesystem modification times. Git has no universal post-worktree-create hook; hooks may be bypassed or overridden. A live agent without file changes cannot be detected.
 
 ## Backup transaction

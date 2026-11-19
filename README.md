@@ -31,6 +31,14 @@ git workspace-cleaner install
 
 This installs global checkout, commit and merge hooks. It refuses to replace an existing global hooks path. Git uses a single hooks directory: this global setting prevents ordinary repository-local hooks from running, while repositories with their own `core.hooksPath` bypass these hooks. Review existing hooks before installing.
 
+Alternatively, install hooks in existing repositories under a directory:
+
+```sh
+git workspace-cleaner install-path ~/Dev
+```
+
+The command recursively lists Git worktrees and asks for **one confirmation** before making changes. It installs checkout, commit and merge hooks in each repository and registers each worktree. It does not follow symbolic links or discover bare repositories. Repositories with a custom `core.hooksPath` or an existing conflicting hook are skipped instead of being overwritten; failures are reported and produce a nonzero exit status. Linked worktrees share their repository's hooks. Future repositories outside this scan still need global hooks or another scan. Installation does not schedule periodic cleanup.
+
 ## Usage
 
 ### Register and inspect worktrees
