@@ -1,10 +1,14 @@
-# Workspace Cleaner
+# Holt
 
-Workspace Cleaner helps developers and AI agents manage Git worktrees that may have been left behind. It tracks registered worktrees, identifies those that appear inactive, and can back up their current changes to a separate remote branch before removing the local worktree. A recorded backup can later be restored into a new worktree.
+![An ancient forest shelters two figures from a distant storm as a new green landscape emerges](docs/images/holt-grove.png)
+
+In Norse mythology, Hoddmímis holt is the grove where Líf and Lífþrasir take shelter during Ragnarök, surviving to inhabit the renewed world. Holt borrows that image: it preserves work from an inactive workspace so it can be recovered and continued later. The connection is a metaphor for the project, not a claim that the myth describes a backup. ([Source: an edition of the Poetic Edda](https://library.oapen.org/bitstream/id/1acbfce8-2fa6-468c-a1c8-0fc363011dfa/9781800647749.pdf))
+
+Holt helps developers and AI agents manage Git worktrees that may have been left behind. It tracks registered worktrees, identifies those that appear inactive, and can back up their current changes to a separate remote branch before removing the local worktree. A recorded backup can later be restored into a new worktree.
 
 The default inactivity period is **14 days**. You can change it globally or for specific directories, disable automation for selected paths, or enable it only for an allowlist. The main worktree of a repository is never removed.
 
-Workspace Cleaner is a Git subcommand written in Rust. It observes some Git activity through hooks and uses an external scheduler for periodic checks. Discovery and inactivity detection are best effort; see [Safety and limitations](#safety-and-limitations) before enabling automatic cleanup.
+Holt is a Git subcommand written in Rust. Its command remains `git workspace-cleaner`; it observes some Git activity through hooks and uses an external scheduler for periodic checks. Discovery and inactivity detection are best effort; see [Safety and limitations](#safety-and-limitations) before enabling automatic cleanup.
 
 ## Installation
 

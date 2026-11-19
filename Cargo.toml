@@ -1,5 +1,5 @@
 [package]
-name = "workspace-cleaner"
+name = "holt"
 version = "0.1.0"
 edition = "2021"
 description = "Back up and clean stale Git worktrees"

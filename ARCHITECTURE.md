@@ -1,6 +1,6 @@
 # Architecture
 
-Git discovers `git-workspace-cleaner` as a subcommand. The Rust executable implements CLI parsing, YAML policy resolution, a JSON registry, Git command execution, and backup and restore.
+Holt is discovered by Git as the `git workspace-cleaner` subcommand. The Rust executable implements CLI parsing, YAML policy resolution, a JSON registry, Git command execution, and backup and restore.
 
 ## Discovery and policy
 

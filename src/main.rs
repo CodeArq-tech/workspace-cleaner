@@ -298,7 +298,7 @@ fn install_repository(repo: &Path) -> Result<()> {
             {
                 return Ok(());
             }
-            bail!("Workspace Cleaner global hooks are incomplete; run install first");
+            bail!("Holt global hooks are incomplete; run install first");
         }
         bail!("core.hooksPath is configured as {value}; refusing to override it");
     }
